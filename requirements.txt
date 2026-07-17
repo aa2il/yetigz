@@ -1,0 +1,37 @@
+###############################################################################
+#
+# Under uv:
+#     rm -r .venv/ pyproject.toml .python-version uv.lock
+#     uv init
+#     uv add -r requirements.txt
+#
+# On RPI, also need:
+#     uv pip install -r requirements.txt
+#
+# It used to work like this:
+#     pip3 install -r requirements.txt
+#
+###############################################################################
+
+pyqt6
+#pyqt6==6.7.1          # Need to specify this version on RPi
+
+matplotlib
+numpy
+scipy
+xlrd
+openpyxl
+pandas
+chardet
+unidecode
+psutil
+pyserial
+
+requests
+beautifulsoup4               # Parse HTML
+keyring                      # For storing passwords securely
+
+aiohttp
+asyncio
+
+
