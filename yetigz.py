@@ -1,12 +1,27 @@
 #!/usr/bin/env -S uv run --script
-
-###############################################################################
-
-# Simple test program showing how to talk to Yeti Goal Zero using Requests.
+#
+################################################################################
+#
+# yetigz.py - Rev 1.0
+# Copyright (C) 2026 by Joseph B. Attili, joe DOT aa2il AT gmail DOT com
+#
+# Control and Monitoring GUI for Yeti GoalZero Battery.
 # I had a lot of trouble getting goalzero library to work and its probably
 # overkill.  It turns out it is very simple to use requests for this thing.
-
-###############################################################################
+#
+################################################################################
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+################################################################################
 
 from gzio import YetiGZ
 import sys
@@ -55,8 +70,6 @@ class theCanvas(FigureCanvas):
             self.xdata.append(xdata)
             for i in range(len(ydata)):
                 self.ydata[i].append(ydata[i])
-        #self.xmin=min(self.xmin,xdata)
-        #self.xmax=max(self.xmin,xdata)
         self.xmin=min(self.xdata)
         self.xmax=max(self.xdata)
 
@@ -94,12 +107,9 @@ class MainWindow(QMainWindow):
         # Open connection to yeti
         self.yeti = YetiGZ(ADDR)
 
-        # Open log file
+        # Open log file - read in past telemtry
         fname='gz.dat'
         [xdata,ydata]=self.parse_log_file(fname)
-        #sys.exit(0)
-        
-        #self.fp = open(fname,'w')
         self.fp = open(fname,'a+')
 
         # Get basic info
@@ -117,9 +127,6 @@ class MainWindow(QMainWindow):
         print(self.sysinfo.keys())
         print('model=',self.sysinfo['model'])
 
-        # Get sys state
-        #self.state=self.yeti.get_state()
-        
         # Create main window
         self.win  = QWidget()
         self.setCentralWidget(self.win)
@@ -129,7 +136,10 @@ class MainWindow(QMainWindow):
         self.grid = QGridLayout(self.win)
         nrows=6
         ncols=5
-        self.grid.setRowStretch(nrows,ncols)
+        for row in range(nrows):
+            self.grid.setRowStretch(row,0)
+        for col in range(ncols):
+            self.grid.setColumnStretch(col,1)
 
         # Put up info boxes & control buttons
         row = 0
@@ -137,25 +147,22 @@ class MainWindow(QMainWindow):
         lab = QLabel('Model:')
         lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(lab,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
+        self.grid.setRowStretch(row,1)
 
         col+=1
         self.Model = QLabel(self.sysinfo['model'])
         self.Model.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Model,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         col+=1
         lab = QLabel('Power In:')
         lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(lab,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         col+=1
-        self.Pin = QLabel()   # str(self.state['wattsIn'])+' W')
+        self.Pin = QLabel() 
         self.Pin.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Pin,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         col+=1
         self.Btn12V = QPushButton('12 Volt Ports')
@@ -163,33 +170,27 @@ class MainWindow(QMainWindow):
         self.Btn12V.setToolTip('Click to turn 12V Ports on/off')
         self.Btn12V.clicked.connect( functools.partial( self.ToggleButton,button=self.Btn12V,iopt=1 ))
         self.Btn12V.setCheckable(True)
-        #self.ToggleButton(button=self.Btn12V,iopt=0)
-        self.grid.setColumnStretch(col,1)
         
         row+=1
         col = 0
         lab = QLabel('Battery Voltage:')
         lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(lab,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         col+=1
-        self.Voltage = QLabel()   # str(self.state['volts'])+' V')
+        self.Voltage = QLabel() 
         self.Voltage.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Voltage,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         col+=1
         lab = QLabel('Power Out:')
         lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(lab,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         col+=1
-        self.Pout = QLabel()     #str(self.state['wattsOut'])+' W')
+        self.Pout = QLabel()  
         self.Pout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Pout,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         col+=1
         self.BtnUSB = QPushButton('USB Ports')
@@ -197,8 +198,6 @@ class MainWindow(QMainWindow):
         self.BtnUSB.setToolTip('Click to turn USB Ports on/off')
         self.BtnUSB.clicked.connect( functools.partial( self.ToggleButton,button=self.BtnUSB,iopt=1 ))
         self.BtnUSB.setCheckable(True)
-        #self.ToggleButton(button=self.BtnUSB,iopt=0)
-        self.grid.setColumnStretch(col,1)
         
         row+=1
         col = 0
@@ -206,26 +205,19 @@ class MainWindow(QMainWindow):
         lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(lab,row,col,1,1)
         col+=1
-        self.Charge = QLabel()    # str(self.state['socPercent'])+' %')
+        self.Charge = QLabel()   
         self.Charge.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Charge,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         col+=1
         lab = QLabel('Charging:')
         lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(lab,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
         
         col+=1
-        #if self.state['isCharging']:
-        #    txt='Yes'
-        #else:
-        #    txt='No'
-        self.Charging = QLabel()   #txt)
+        self.Charging = QLabel() 
         self.Charging.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Charging,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         col+=1
         self.BtnAC = QPushButton('AC Ports')
@@ -233,31 +225,24 @@ class MainWindow(QMainWindow):
         self.BtnAC.setToolTip('Click to turn AC Ports on/off')
         self.BtnAC.clicked.connect( functools.partial( self.ToggleButton,button=self.BtnAC,iopt=1 ))
         self.BtnAC.setCheckable(True)
-        #self.ToggleButton(button=self.BtnAC,iopt=0)
-        self.grid.setColumnStretch(col,1)
         
         row+=1
         col = 0
         lab = QLabel('Temperature:')
         lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(lab,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
         
         col+=1
-        #deg_c=self.state['temperature']
-        #deg_f=round(9.*deg_c/5.+32.)
-        #txt=str(deg_f)+' F / '+str(deg_c)+' C'
         self.Temp = QLabel() # txt)
         self.Temp.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Temp,row,col,1,1)
-        self.grid.setColumnStretch(col,1)
 
         # Create canvas to hold the plot
         row+=1
         col=0
         self.canvas = theCanvas(self, width=5, height=4, dpi=100)
         self.grid.addWidget(self.canvas,row,col,1,ncols)
-        #self.grid.setColumnStretch(col,1)
+        self.grid.setRowStretch(row,1)
 
         # Create toolbar, passing canvas as first parament, parent (self, the MainWindow) as second.
         row += 1
@@ -273,7 +258,7 @@ class MainWindow(QMainWindow):
 
         # Setup a timer to trigger the redraw by calling update_plot every n secconds
         self.timer = QTimer()
-        self.timer.setInterval(1000*5)
+        self.timer.setInterval(1000*15)
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
 
@@ -282,7 +267,7 @@ class MainWindow(QMainWindow):
 
         # Decode which button we're working with
         txt=button.text()
-        print('Toggle Button: txt=',txt,'\tiopt=',iopt)
+        #print('Toggle Button: txt=',txt,'\tiopt=',iopt)
 
         if txt==self.Btn12V.text():
             key='v12PortStatus'
@@ -340,7 +325,7 @@ class MainWindow(QMainWindow):
         PWRin   = self.state['wattsIn']
         PWRout  = self.state['wattsOut']
         Pct     = self.state['socPercent']
-        print('PWR in=',PWRin,'W\tPWR out=',PWRout,'W\tCharge %=',Pct,'%')
+        #print('PWR in=',PWRin,'W\tPWR out=',PWRout,'W\tCharge %=',Pct,'%')
 
         self.Pin.setText(str(PWRin)+' W')
         self.Pout.setText(str(PWRout)+' W')

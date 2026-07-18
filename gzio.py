@@ -1,12 +1,29 @@
-###############################################################################
-
-# Class to communitated witht eh Yeti Goal Zero
-
-###############################################################################
+################################################################################
+#
+# gzio.py - Rev 1.0
+# Copyright (C) 2026 by Joseph B. Attili, joe DOT aa2il AT gmail DOT com
+#
+# Class to communitated with the Yeti GoalZero Battery
+#
+################################################################################
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+################################################################################
 
 from datetime import datetime
 import requests
 import json
+
+################################################################################
 
 HEADER = {
     "Content-Type": "application/json",
@@ -59,10 +76,10 @@ class YetiGZ():
         self.state = resp.json()
         print('state=',json.dumps(self.state,indent=4))
         print('Status=',resp.status_code)
-        print('Headers=',resp.headers)
-        print('Request url=',resp.request.url)
-        print('Request Headers=',resp.request.headers)
-        print('Request body=',resp.request.body)
+        #print('Headers=',resp.headers)
+        #print('Request url=',resp.request.url)
+        #print('Request Headers=',resp.request.headers)
+        #print('Request body=',resp.request.body)
     
         self.now=datetime.now()
         print(self.now)
