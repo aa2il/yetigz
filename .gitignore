@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+/#*
+/DIFFS
+/gz.dat
+/gz2.dat

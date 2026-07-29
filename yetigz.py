@@ -23,10 +23,10 @@
 #
 ################################################################################
 
-from gzio import YetiGZ
+from gzio import *
 import sys
 import time
-from datetime import datetime
+from datetime import timedelta,datetime,timezone
 import functools
 import json
 
@@ -60,7 +60,7 @@ class theCanvas(FigureCanvas):
         self.xdata = xdata
         self.ydata = ydata
 
-    def updatePlots(self,xdata,ydata):
+    def updatePlots(self,xdata,ydata,dt):
 
         if len(self.xdata)==0:
             self.xdata = [xdata]
@@ -70,8 +70,9 @@ class theCanvas(FigureCanvas):
             self.xdata.append(xdata)
             for i in range(len(ydata)):
                 self.ydata[i].append(ydata[i])
-        self.xmin=min(self.xdata)
+        #self.xmin=min(self.xdata)
         self.xmax=max(self.xdata)
+        self.xmin=max( min(self.xdata) , self.xmax-timedelta(hours=dt) )
 
         if self.lines==None:
             line,=self.axes.plot(xdata, ydata[0], 'r',label='Power In')
@@ -97,40 +98,61 @@ class theCanvas(FigureCanvas):
         self.axes2.set(xlim=(self.xmin,self.xmax),xlabel='Time Stamp',
                        ylim=(0,100),ylabel='Percent Charge (%), Temp (deg C)')
         
+###############################################################################
+
 class MainWindow(QMainWindow):
 
     def __init__(self,ADDR):
         super().__init__()
 
         self.FirstTime=True
+        self.state   = None
         
         # Open connection to yeti
-        self.yeti = YetiGZ(ADDR)
+        #self.yeti    = YetiGZ(ADDR)
+        self.yeti    = Yeti_ESP32(ADDR)
+        self.state   = self.yeti.state
+        self.sysinfo = self.yeti.sysinfo
 
         # Open log file - read in past telemtry
         fname='gz.dat'
         [xdata,ydata]=self.parse_log_file(fname)
         self.fp = open(fname,'a+')
 
+        if 0:
+            # Put log file on a diet
+            fname2='gz2.dat'
+            self.fp2 = open(fname2,'w')
+            print(len(xdata),len(ydata))
+            Pin=ydata[0]
+            Pout=ydata[1]
+            Pct=ydata[2]
+            temp=ydata[3]
+            charging=ydata[4]
+            for i in range(len(xdata)):
+                t=xdata[i]
+                self.fp2.write('%s,%3.1f,%3.1f,%i,%3.0f,%i\n' % \
+                              (t,Pin[i],Pout[i],Pct[i],temp[i],charging[i]))
+            self.fp2.close()        
+
         # Get basic info
         ntries=0
-        self.sysinfo = None
         while ntries<20:
             ntries+=1
-            self.sysinfo = self.yeti.get_sysinfo()
+            self.sysinfo=self.yeti.get_sysinfo()
             if self.sysinfo:
                 break
             time.sleep(10)
         else:
             print('Unable to read Yeti sys info - giving up :-(')
             sys.exit(0)
-        print(self.sysinfo.keys())
-        print('model=',self.sysinfo['model'])
+        #print(self.sysinfo.keys())
+        #print('model=',self.sysinfo['model'])
 
         # Create main window
         self.win  = QWidget()
         self.setCentralWidget(self.win)
-        self.setWindowTitle('Embedded Plotting Demo')
+        self.setWindowTitle('Yeti GoalZero Monitor')
 
         # Use a grid layout
         self.grid = QGridLayout(self.win)
@@ -237,6 +259,13 @@ class MainWindow(QMainWindow):
         self.Temp.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Temp,row,col,1,1)
 
+        col+=3
+        self.BtnTime = QPushButton('All Time')
+        self.grid.addWidget(self.BtnTime,row,col,1,1)
+        self.BtnTime.setToolTip('Select Time Period for Graph')
+        self.BtnTime.clicked.connect( self.ToggleTimePeriod )
+        self.time_delta=99999
+        
         # Create canvas to hold the plot
         row+=1
         col=0
@@ -263,6 +292,27 @@ class MainWindow(QMainWindow):
         self.timer.start()
 
     # Function to toggle button statte
+    def ToggleTimePeriod(self):
+        # Decode which button we're working with
+        txt=self.BtnTime.text()
+        
+        if txt=='All Time':
+            self.BtnTime.setText('24 Hours')
+            self.time_delta=24*1
+        elif txt=='24 Hours':
+            self.BtnTime.setText('48 Hours')
+            self.time_delta=24*2
+        elif txt=='48 Hours':
+            self.BtnTime.setText('1 Week')
+            self.time_delta=24*7
+        else:
+            self.BtnTime.setText('All Time')
+            self.time_delta=24*365
+
+        self.update_plot(QUERY=False)
+        
+            
+    # Function to toggle button statte
     def ToggleButton(self,button=None,iopt=0):
 
         # Decode which button we're working with
@@ -286,7 +336,8 @@ class MainWindow(QMainWindow):
         if iopt==1:
             # Toggle the button
             status=1-status
-            self.yeti.set_state(key,status)
+            self.state=self.yeti.set_state(key,status)
+            self.update_plot(QUERY=False)
 
         # Color button depending on state
         if status==1:
@@ -309,11 +360,12 @@ class MainWindow(QMainWindow):
             }')
 
     # Routine to update plot with latest data
-    def update_plot(self):
+    def update_plot(self,QUERY=True):
 
         # Query the yeti gz
         now=datetime.now()
-        self.state=self.yeti.get_state()
+        if QUERY:
+            self.state=self.yeti.get_state()
         if not self.state:
             print('Unable to read Yeti state - Try again ... :-(')
             self.fp.write('%s Unable to read Yeti State\n' % \
@@ -343,22 +395,28 @@ class MainWindow(QMainWindow):
             txt='No'
         self.Charging.setText(txt)
 
+        # The time stamp is nonsense - circa 1970!
+        #ts=self.state['timestamp']
+        #ts2 = datetime.fromtimestamp(ts,tz=timezone.utc)
+        #print('ts=',ts,'\tts2=',ts2)
+
         self.ToggleButton(button=self.Btn12V,iopt=0)
         self.ToggleButton(button=self.BtnUSB,iopt=0)
         self.ToggleButton(button=self.BtnAC,iopt=0)
                            
         # Save data to log file
-        #self.fp.write(str(self.state+'\n'))
-        self.fp.write('%s,%f,%f,%f,%f,%i\n' % \
+        self.fp.write('%s,%3.1f,%3.1f,%i,%i,%i\n' % \
                       (now.strftime('%Y-%m-%d %H:%M:%S'),
-                       PWRin,PWRout,Pct,deg_c,self.state['isCharging']))
+                       PWRin,PWRout,
+                       Pct,deg_c,
+                       self.state['isCharging'] ))
         self.fp.flush()
 
         # Plot the latest and greatest readings and redraw the canvas
-        self.canvas.updatePlots(now,[PWRin,PWRout,Pct,deg_c])
+        self.canvas.updatePlots(now,[PWRin,PWRout,Pct,deg_c],self.time_delta)
         self.canvas.draw()
 
-
+    # Function to parse old log file so we can plot all available data
     def parse_log_file(self,fname):
 
         fp = open(fname,'r')
@@ -417,7 +475,7 @@ class MainWindow(QMainWindow):
         fp.close()
         print('nfaults=',nfaults)
 
-        return timestamp,[PWRin,PWRout,Pct,temp]
+        return timestamp,[PWRin,PWRout,Pct,temp,charging]
     
 
 ###############################################################################
