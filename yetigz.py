@@ -31,12 +31,14 @@ import functools
 import json
 
 from widgets_qt import QTLIB
-exec('from '+QTLIB+'.QtWidgets import QMainWindow,QWidget,QGridLayout,QPushButton,QLabel,QApplication')
+exec('from '+QTLIB+'.QtWidgets import QMainWindow,QWidget,QGridLayout,QPushButton,QLabel,QApplication,QComboBox')
 exec('from '+QTLIB+'.QtCore import Qt,QTimer')
 
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+#import bisect
+import math
 
 ###############################################################################
 
@@ -133,7 +135,7 @@ class MainWindow(QMainWindow):
                 t=xdata[i]
                 self.fp2.write('%s,%3.1f,%3.1f,%i,%3.0f,%i\n' % \
                               (t,Pin[i],Pout[i],Pct[i],temp[i],charging[i]))
-            self.fp2.close()        
+            self.fp2.close()
 
         # Get basic info
         ntries=0
@@ -259,12 +261,33 @@ class MainWindow(QMainWindow):
         self.Temp.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Temp,row,col,1,1)
 
-        col+=3
-        self.BtnTime = QPushButton('All Time')
-        self.grid.addWidget(self.BtnTime,row,col,1,1)
-        self.BtnTime.setToolTip('Select Time Period for Graph')
-        self.BtnTime.clicked.connect( self.ToggleTimePeriod )
-        self.time_delta=99999
+        col+=1
+        self.WHin = QLabel() # txt)
+        self.WHin.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.grid.addWidget(self.WHin,row,col,1,1)
+
+        col+=1
+        self.WHout = QLabel() # txt)
+        self.WHout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.grid.addWidget(self.WHout,row,col,1,1)
+
+        col+=1
+        if 0:
+            self.BtnTime = QPushButton('All Time')
+            self.grid.addWidget(self.BtnTime,row,col,1,1)
+            self.BtnTime.setToolTip('Select Time Period for Graph')
+            self.BtnTime.clicked.connect( self.ToggleTimePeriod )
+            self.time_delta=99999
+        else:
+            self.Durations=['24 Hours','48 Hours','1 Week','All Time']
+            self.TimeDeltas=[24*1,24*2,24*7,24*365]
+            self.TimeBox = QComboBox()
+            self.TimeBox.addItems(self.Durations)
+            self.grid.addWidget(self.TimeBox,row,col,1,1)
+            self.TimeBox.setToolTip('Select Time Period for Graph')
+            self.TimeBox.currentIndexChanged.connect(self.TimePeriodSelect )
+            self.TimeBox.setCurrentIndex(0)
+            self.time_delta=self.TimeDeltas[0]
         
         # Create canvas to hold the plot
         row+=1
@@ -291,6 +314,16 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
 
+    # Function to select time period for graph
+    def TimePeriodSelect(self,i):
+        txt=self.Durations[i]    #.split(" ")
+        self.time_delta=self.TimeDeltas[i]
+        print('TIME PERIOD SELECT: i=',i,
+              '\ttxt=',txt,
+              '\tTime Delta=',self.time_delta)
+        self.update_plot(QUERY=False)
+        
+        
     # Function to toggle button statte
     def ToggleTimePeriod(self):
         # Decode which button we're working with
@@ -359,6 +392,45 @@ class MainWindow(QMainWindow):
             padding: 4px; \
             }')
 
+    def compute_energy(self,t,Pin,Pout,dhours):
+        Ein=0
+        Eout=0
+        t0=t[-1] - timedelta(hours=dhours)
+
+        Pin1=0
+        Pout1=0
+        t1=t[0]
+        t2=t[0]
+        for i in range(1,len(t)):
+            if t[i]>=t0:
+                if not math.isnan(Pin[i]):
+                    dt    = (t[i]-t1).total_seconds()
+                    Ein  += dt*(Pin[i]+Pin1)/2
+                    t1=t[i]
+                    Pin1=Pin[i]
+                if not math.isnan(Pout[i]):
+                    dt    = (t[i]-t2).total_seconds()
+                    Eout += dt*(Pout[i]+Pout1)/2
+                    t2=t[i]
+                    Pout1=Pout[i]
+            else:
+                t1=t[i]
+                t2=t[i]
+
+        """
+        # Faster but doesn't handle nan's
+        i0 =bisect.bisect(t, t0)
+        for i in range(i0,len(t)):
+            dt    = (t[i]-t[i-1]).total_seconds()
+            Ein  += dt*(Pin[i]+Pin[i-1])/2
+            Eout += dt*(Pout[i]+Pout[i-1])/2
+        """
+        Ein /=3600.
+        Eout /=3600.
+
+        return round(Ein),round(Eout)
+
+            
     # Routine to update plot with latest data
     def update_plot(self,QUERY=True):
 
@@ -384,10 +456,14 @@ class MainWindow(QMainWindow):
         self.Voltage.setText(str(self.state['volts'])+' V')
         self.Charge.setText(str(self.state['socPercent'])+' %')
 
+        # There can be hiccups in the temperature read
         deg_c=self.state['temperature']
-        deg_f=round(9.*deg_c/5.+32.)
-        txt=str(deg_f)+' F / '+str(deg_c)+' C'
-        self.Temp.setText(txt)
+        if deg_c>50 or deg_c==0.0:
+            deg_c=float('nan')
+        else:
+            deg_f=round(9.*deg_c/5.+32.)
+            txt=str(deg_f)+' F / '+str(deg_c)+' C'
+            self.Temp.setText(txt)
 
         if self.state['isCharging']:
             txt='Yes'
@@ -395,17 +471,30 @@ class MainWindow(QMainWindow):
             txt='No'
         self.Charging.setText(txt)
 
+        Ein,Eout=self.compute_energy(self.canvas.xdata,
+                                     self.canvas.ydata[0],
+                                     self.canvas.ydata[1],
+                                     self.time_delta)
+        #print(Ein,Eout)
+        txt=str(Ein)+' Wh in'
+        self.WHin.setText(txt)
+        txt=str(Eout)+' Wh out'
+        self.WHout.setText(txt)
+
         # The time stamp is nonsense - circa 1970!
-        #ts=self.state['timestamp']
-        #ts2 = datetime.fromtimestamp(ts,tz=timezone.utc)
-        #print('ts=',ts,'\tts2=',ts2)
+        if 0:
+            ts=self.state['timestamp']
+            ts2 = datetime.fromtimestamp(ts,tz=timezone.utc)
+            print('ts=',ts,'\tts2=',ts2)
+            print('now=',now,'\t=',now.timestamp())
+            #self.yeti.set_state('timestamp',int(now.timestamp()))   # Doesnt work
 
         self.ToggleButton(button=self.Btn12V,iopt=0)
         self.ToggleButton(button=self.BtnUSB,iopt=0)
         self.ToggleButton(button=self.BtnAC,iopt=0)
                            
         # Save data to log file
-        self.fp.write('%s,%3.1f,%3.1f,%i,%i,%i\n' % \
+        self.fp.write('%s,%3.1f,%3.1f,%i,%4.0f,%i\n' % \
                       (now.strftime('%Y-%m-%d %H:%M:%S'),
                        PWRin,PWRout,
                        Pct,deg_c,
