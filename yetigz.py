@@ -28,7 +28,6 @@ import sys
 import time
 from datetime import timedelta,datetime,timezone
 import functools
-import json
 
 from widgets_qt import QTLIB
 exec('from '+QTLIB+'.QtWidgets import QMainWindow,QWidget,QGridLayout,QPushButton,QLabel,QApplication,QComboBox')
@@ -37,7 +36,6 @@ exec('from '+QTLIB+'.QtCore import Qt,QTimer')
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
-#import bisect
 import math
 
 ###############################################################################
@@ -64,8 +62,12 @@ class theCanvas(FigureCanvas):
 
     def updatePlots(self,xdata,ydata,dt):
 
-        if len(self.xdata)==0:
+        if xdata==None:
+            return
+        if self.xdata==None or len(self.xdata)==0:
             self.xdata = [xdata]
+            if self.ydata==None:
+                self.ydata = []
             for i in range(len(ydata)):
                 self.ydata.append([ydata[i]])
         else:            
@@ -96,9 +98,9 @@ class theCanvas(FigureCanvas):
 
         # Axes control
         self.axes.set(xlim=(self.xmin,self.xmax),xlabel='Time Stamp',
-                      ylim=(0,100),ylabel='Power (W)')
+                      ylim=(0,100.5),ylabel='Power (W)')
         self.axes2.set(xlim=(self.xmin,self.xmax),xlabel='Time Stamp',
-                       ylim=(0,100),ylabel='Percent Charge (%), Temp (deg C)')
+                       ylim=(0,100.5),ylabel='Percent Charge (%), Temp (deg C)')
         
 ###############################################################################
 
@@ -112,12 +114,14 @@ class MainWindow(QMainWindow):
         
         # Open connection to yeti
         #self.yeti    = YetiGZ(ADDR)
-        self.yeti    = Yeti_ESP32(ADDR)
+        #self.yeti    = Yeti_ESP32(ADDR)
+        self.yeti    = Renogy_ESP32()
         self.state   = self.yeti.state
         self.sysinfo = self.yeti.sysinfo
 
         # Open log file - read in past telemtry
         fname='gz.dat'
+        fname='wanderer.dat'
         [xdata,ydata]=self.parse_log_file(fname)
         self.fp = open(fname,'a+')
 
@@ -292,7 +296,7 @@ class MainWindow(QMainWindow):
         # Create canvas to hold the plot
         row+=1
         col=0
-        self.canvas = theCanvas(self, width=5, height=4, dpi=100)
+        self.canvas = theCanvas(self, width=5, height=4)
         self.grid.addWidget(self.canvas,row,col,1,ncols)
         self.grid.setRowStretch(row,1)
 
@@ -392,7 +396,15 @@ class MainWindow(QMainWindow):
             padding: 4px; \
             }')
 
-    def compute_energy(self,t,Pin,Pout,dhours):
+    def compute_energy(self,xdata,ydata,dhours):
+        
+        if xdata==None:
+            return 0,0
+        else:
+            t=xdata
+            Pin=ydata[0]
+            Pout=ydata[1]
+
         Ein=0
         Eout=0
         t0=t[-1] - timedelta(hours=dhours)
@@ -472,8 +484,7 @@ class MainWindow(QMainWindow):
         self.Charging.setText(txt)
 
         Ein,Eout=self.compute_energy(self.canvas.xdata,
-                                     self.canvas.ydata[0],
-                                     self.canvas.ydata[1],
+                                     self.canvas.ydata,
                                      self.time_delta)
         #print(Ein,Eout)
         txt=str(Ein)+' Wh in'
@@ -494,7 +505,7 @@ class MainWindow(QMainWindow):
         self.ToggleButton(button=self.BtnAC,iopt=0)
                            
         # Save data to log file
-        self.fp.write('%s,%3.1f,%3.1f,%i,%4.0f,%i\n' % \
+        self.fp.write('%s,%3.1f,%3.1f,%i,%.0f,%i\n' % \
                       (now.strftime('%Y-%m-%d %H:%M:%S'),
                        PWRin,PWRout,
                        Pct,deg_c,
@@ -508,7 +519,11 @@ class MainWindow(QMainWindow):
     # Function to parse old log file so we can plot all available data
     def parse_log_file(self,fname):
 
-        fp = open(fname,'r')
+        try:
+            fp = open(fname,'r')
+        except:
+            return None,None
+            
         nfaults=0
 
         timestamp=[]

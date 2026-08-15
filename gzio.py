@@ -121,7 +121,120 @@ class Yeti_ESP32():
 
     def __init__(self,ADDR):
 
-        self.URL='http://'+ADDR
+        #self.URL='http://'+ADDR
+        self.now=datetime.now()
+        self.sysinfo = None
+        self.state = None
+        
+        # Open connection to esp32 web client
+        #list_all_serial_devices(True)
+        device,vid_pid=find_serial_device(DEVICE_ID,0) 
+        print('\tdevice=',device,'\tvid_pid=',vid_pid)
+
+        self.ser = serial.Serial(device,BAUD,timeout=1)  #,
+        #xonxoff=False,dsrdtr=False,rtscts=False)
+        print('\tser=',self.ser,'\n')
+        time.sleep(5)
+
+        self.read_text()
+
+    # Function to read any resdidual text in the serial port
+    def read_text(self):
+        txt=''
+        while self.ser and self.ser.in_waiting>0:
+            txt1 = self.ser.read_all().decode("utf-8",'ignore')
+            txt += txt1
+            time.sleep(1)
+        #print('txt=',txt)
+
+        return txt
+
+    def send_command(self,cmd):
+        self.ser.write((cmd+'\n').encode())
+        self.ser.flush()
+        time.sleep(.1)
+
+        txt=''
+        cnt=0
+        while '<EOR>' not in txt:
+            #line=ser.readline()
+            #line=ser.read_until()
+            #txt+=line.decode()
+            txt=self.read_text()
+            #print('txt=',txt)
+            cnt+=1
+            if cnt>5:
+                print('No response')
+                break
+            else:
+                time.sleep(1)
+        #print('txt=',txt)
+
+        return txt
+        
+    def quit(self):
+        print('\nQuitting ...\n')
+        self.ser.close()
+        sys.exit(0)
+    
+        
+    # Function to query sysinfo
+    def get_sysinfo(self,TimeOut=10):
+        print('\n=========== GET SYSINFO ==============\n')
+        self.now=datetime.now()
+        print('now=',self.now)
+        
+        txt=self.send_command('sysinfo')
+        b=txt.split('data=')[1].split('<EOR>')[0].strip()
+        #print('b=',b,type(b))
+        self.sysinfo=eval(b)
+        #self.sysinfo = resp.json()
+        print('sysinfo=',json.dumps(self.sysinfo,indent=4))
+        return self.sysinfo
+
+    # Get state
+    def get_state(self,TimeOut=10):
+        print('\n=========== GET STATE ==============\n')
+
+        txt=self.send_command('state')
+        try:
+            b=txt.split('data=')[1].split('<EOR>')[0].strip()
+            #print('b=',b,type(b))
+            self.state=eval(b)
+            print('state=',json.dumps(self.state,indent=4))
+        except Exception as e:
+            print("GET STATE: An error occurred:", e)
+            return None
+
+        self.now=datetime.now()
+        print(self.now)
+        return self.state
+
+    # Change state of some attribute, e.g. toggle 12V port
+    def set_state(self,key,onoff):
+        print('\n=========== SET STATE ==============\n')
+
+        cmd='SET '+key+' '+str(onoff)
+        txt=self.send_command(cmd)
+        b=txt.split('post=')[1].split('<EOR>')[0].strip()
+        #print('b=',b,type(b))
+        self.state=eval(b)
+        print('state=',json.dumps(self.state,indent=4))
+        
+        self.now=datetime.now()
+        print(self.now)
+        return self.state
+
+        return self.state
+
+
+###############################################################################
+
+# Object to communicate with the Renogy Wanderer via esp32 client
+class Renogy_ESP32():
+
+    def __init__(self):
+
         self.now=datetime.now()
         self.sysinfo = None
         self.state = None
@@ -161,7 +274,7 @@ class Yeti_ESP32():
             #line=ser.read_until()
             #txt+=line.decode()
             txt=self.read_text()
-            print('txt=',txt)
+            #print('txt=',txt)
             cnt+=1
             if cnt>5:
                 print('No response')
@@ -184,7 +297,8 @@ class Yeti_ESP32():
         self.now=datetime.now()
         print('now=',self.now)
         
-        txt=self.send_command('sysinfo')
+        txt=self.send_command('reninfo')
+        print('===txt=',txt)
         b=txt.split('data=')[1].split('<EOR>')[0].strip()
         #print('b=',b,type(b))
         self.sysinfo=eval(b)
@@ -196,7 +310,7 @@ class Yeti_ESP32():
     def get_state(self,TimeOut=10):
         print('\n=========== GET STATE ==============\n')
 
-        txt=self.send_command('state')
+        txt=self.send_command('renstate')
         try:
             b=txt.split('data=')[1].split('<EOR>')[0].strip()
             #print('b=',b,type(b))
