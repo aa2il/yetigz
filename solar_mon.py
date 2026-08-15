@@ -2,12 +2,36 @@
 #
 ################################################################################
 #
-# yetigz.py - Rev 1.0
+# solar_mon.py - Rev 1.0
 # Copyright (C) 2026 by Joseph B. Attili, joe DOT aa2il AT gmail DOT com
 #
-# Control and Monitoring GUI for Yeti GoalZero Battery.
-# I had a lot of trouble getting goalzero library to work and its probably
-# overkill.  It turns out it is very simple to use requests for this thing.
+# Control and Monitoring GUI for Yeti GoalZero Battery and Renogy Wander
+# Charge Controller.
+#
+# Notes:
+#    - I have a remote radio site that is solar power.  One source of power
+#      is a Yeti GoalZero 3000 "solar generator."  The other is a bank of
+#      12V batteries which are charged via a Renogy Wander 10.
+#    - This program allows monitoring and control of both via an ESP32
+#      interface.  See esp32/solar_client.py in this repository for that
+#      code.
+#    - I had a lot of trouble getting the goalzero library to work and
+#      its probably overkill.  It turns out it is very simple to use
+#      requests for this thing.
+#    - Comms with the Renogy box is very simple, requiring mainly a RS232
+#      level shifter between the ESP32 and the RJ12 port on the box.
+#
+# To Do:
+#    - Need to add more abilities to Renogy code such as turning the
+#      load on and off.
+#    - Bring out some of the hardwired parameters to the command line, e.g.
+#      update interval
+#    - Try adding a udp wifi serer to the ESP32 code and make queries
+#      via wifi.  If successful, try powering the ESP32 from the 12V
+#      available at the RS232 port to get rid of USB ttether.
+#    - Put updater in separate thread so that gui is more responsive.
+#    - Take a look at the alternate python lib for Renergy devices - might be
+#      more complete.
 #
 ################################################################################
 #
@@ -30,7 +54,7 @@ from datetime import timedelta,datetime,timezone
 import functools
 
 from widgets_qt import QTLIB
-exec('from '+QTLIB+'.QtWidgets import QMainWindow,QWidget,QGridLayout,QPushButton,QLabel,QApplication,QComboBox')
+exec('from '+QTLIB+'.QtWidgets import QMainWindow,QWidget,QTabWidget,QGridLayout,QPushButton,QLabel,QApplication,QComboBox')
 exec('from '+QTLIB+'.QtCore import Qt,QTimer')
 
 from matplotlib.backends.backend_qtagg import FigureCanvas
@@ -101,27 +125,24 @@ class theCanvas(FigureCanvas):
                       ylim=(0,100.5),ylabel='Power (W)')
         self.axes2.set(xlim=(self.xmin,self.xmax),xlabel='Time Stamp',
                        ylim=(0,100.5),ylabel='Percent Charge (%), Temp (deg C)')
+
         
 ###############################################################################
 
-class MainWindow(QMainWindow):
+class BATTERY():
+    def __init__(self,parent,name):
 
-    def __init__(self,ADDR):
-        super().__init__()
-
-        #self.FirstTime=True
-        self.state   = None
+        self.parent=parent
         
-        # Open connection to yeti
-        #self.yeti    = YetiGZ(ADDR)          # Poll Yeti GZ directly via wifi
-        #self.yeti    = Yeti_ESP32(ADDR)     # Poll Yeti GZ directly via ESP32 interface
-        self.yeti    = Renogy_ESP32()       # Poll YRenogy Wanderer via ESP32 interface
-        self.state   = self.yeti.state
-        self.sysinfo = self.yeti.sysinfo
+        # Open connection to solar device
+        self.device=CHARGE_CONTROLLER(name)
+        #self.device   = Charger()
+        self.state   = self.device.state
+        self.sysinfo = self.device.sysinfo
 
         # Open log file - read in past telemtry
-        [xdata,ydata]=self.parse_log_file(self.yeti.fname)
-        self.fp = open(self.yeti.fname,'a+')
+        [xdata,ydata]=self.parse_log_file(self.device.fname)
+        self.fp = open(self.device.fname,'a+')
 
         if 0:
             # Put log file on a diet
@@ -143,23 +164,24 @@ class MainWindow(QMainWindow):
         ntries=0
         while ntries<20:
             ntries+=1
-            self.sysinfo=self.yeti.get_sysinfo()
+            self.sysinfo=self.device.get_sysinfo()
             if self.sysinfo:
                 break
             time.sleep(10)
         else:
-            print('Unable to read Yeti sys info - giving up :-(')
+            print('Unable to read SYS INFO - giving up :-(')
             sys.exit(0)
         #print(self.sysinfo.keys())
         #print('model=',self.sysinfo['model'])
 
-        # Create main window
-        self.win  = QWidget()
-        self.setCentralWidget(self.win)
-        self.setWindowTitle('Yeti GoalZero Monitor')
+        # Add gui tab for this device
+        self.tab = QWidget()
+        parent.addTab(self.tab,self.device.name)
 
-        # Use a grid layout
-        self.grid = QGridLayout(self.win)
+        # Use a grid layout on this tab
+        self.grid = QGridLayout(self.tab)
+        #grid = QGridLayout()
+        #self.tab1.setLayout(grid)
         nrows=6
         ncols=5
         for row in range(nrows):
@@ -218,12 +240,15 @@ class MainWindow(QMainWindow):
         self.Pout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Pout,row,col,1,1)
 
-        col+=1
-        self.BtnUSB = QPushButton('USB Ports')
-        self.grid.addWidget(self.BtnUSB,row,col,1,1)
-        self.BtnUSB.setToolTip('Click to turn USB Ports on/off')
-        self.BtnUSB.clicked.connect( functools.partial( self.ToggleButton,button=self.BtnUSB,iopt=1 ))
-        self.BtnUSB.setCheckable(True)
+        if self.device.name=='Yeti':
+            col+=1
+            self.BtnUSB = QPushButton('USB Ports')
+            self.grid.addWidget(self.BtnUSB,row,col,1,1)
+            self.BtnUSB.setToolTip('Click to turn USB Ports on/off')
+            self.BtnUSB.clicked.connect( functools.partial( self.ToggleButton,button=self.BtnUSB,iopt=1 ))
+            self.BtnUSB.setCheckable(True)
+        else:
+            self.BtnUSB = None
         
         row+=1
         col = 0
@@ -245,12 +270,15 @@ class MainWindow(QMainWindow):
         self.Charging.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Charging,row,col,1,1)
 
-        col+=1
-        self.BtnAC = QPushButton('AC Ports')
-        self.grid.addWidget(self.BtnAC,row,col,1,1)
-        self.BtnAC.setToolTip('Click to turn AC Ports on/off')
-        self.BtnAC.clicked.connect( functools.partial( self.ToggleButton,button=self.BtnAC,iopt=1 ))
-        self.BtnAC.setCheckable(True)
+        if self.device.name=='Yeti':
+            col+=1
+            self.BtnAC = QPushButton('AC Ports')
+            self.grid.addWidget(self.BtnAC,row,col,1,1)
+            self.BtnAC.setToolTip('Click to turn AC Ports on/off')
+            self.BtnAC.clicked.connect( functools.partial( self.ToggleButton,button=self.BtnAC,iopt=1 ))
+            self.BtnAC.setCheckable(True)
+        else:
+            self.BtnAC = None
         
         row+=1
         col = 0
@@ -299,16 +327,14 @@ class MainWindow(QMainWindow):
         self.grid.setRowStretch(row,1)
 
         # Create toolbar, passing canvas as first parament, parent (self, the MainWindow) as second.
-        row += 1
-        toolbar = NavigationToolbar(self.canvas, self)
-        self.grid.addWidget(toolbar,row,col,1,ncols)
+        if 0:
+            row += 1
+            toolbar = NavigationToolbar(self.canvas, self)
+            self.grid.addWidget(toolbar,row,col,1,ncols)
 
         # Create initial data arrays & plot data
         self.canvas.stuffData(xdata,ydata)
         self.update_plot()
-
-        # Ready to roll!
-        self.show()
 
         # Setup a timer to trigger the redraw by calling update_plot every n secconds
         self.timer = QTimer()
@@ -316,6 +342,7 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
 
+        
     # Function to select time period for graph
     def TimePeriodSelect(self,i):
         txt=self.Durations[i]    #.split(" ")
@@ -346,13 +373,14 @@ class MainWindow(QMainWindow):
 
         self.update_plot(QUERY=False)
         
-            
     # Function to toggle button statte
     def ToggleButton(self,button=None,iopt=0):
 
         # Decode which button we're working with
-        txt=button.text()
-        #print('Toggle Button: txt=',txt,'\tiopt=',iopt)
+        if button!=None:
+            txt=button.text()
+        else:
+            return
 
         if txt==self.Btn12V.text():
             key='v12PortStatus'
@@ -371,7 +399,7 @@ class MainWindow(QMainWindow):
         if iopt==1:
             # Toggle the button
             status=1-status
-            self.state=self.yeti.set_state(key,status)
+            self.state=self.device.set_state(key,status)
             self.update_plot(QUERY=False)
 
         # Color button depending on state
@@ -447,7 +475,7 @@ class MainWindow(QMainWindow):
         # Query the yeti gz
         now=datetime.now()
         if QUERY:
-            self.state=self.yeti.get_state()
+            self.state=self.device.get_state()
         if not self.state:
             print('Unable to read Yeti state - Try again ... :-(')
             self.fp.write('%s Unable to read Yeti State\n' % \
@@ -496,7 +524,6 @@ class MainWindow(QMainWindow):
             ts2 = datetime.fromtimestamp(ts,tz=timezone.utc)
             print('ts=',ts,'\tts2=',ts2)
             print('now=',now,'\t=',now.timestamp())
-            #self.yeti.set_state('timestamp',int(now.timestamp()))   # Doesnt work
 
         self.ToggleButton(button=self.Btn12V,iopt=0)
         self.ToggleButton(button=self.BtnUSB,iopt=0)
@@ -579,7 +606,34 @@ class MainWindow(QMainWindow):
 
         return timestamp,[PWRin,PWRout,Pct,temp,charging]
     
+        
+###############################################################################
 
+class MainWindow(QMainWindow):
+
+    def __init__(self,ADDR):
+        super().__init__()
+
+        # Create main window
+        self.win  = QWidget()
+        self.setCentralWidget(self.win)
+        self.setWindowTitle('Yeti GoalZero Monitor')
+
+        # Use a grid layout
+        self.grid = QGridLayout(self.win)
+        
+        # Add tabs to hold buttons for presets
+        self.tabs = QTabWidget()
+        self.grid.addWidget(self.tabs,0,0,1,1)
+
+        # Add tabs for Yeti GZ and Renogy Wander
+        self.yeti = BATTERY(self.tabs,'Yeti')
+        self.renogy = BATTERY(self.tabs,'Renogy')
+        
+        # Ready to roll!
+        self.show()
+
+        
 ###############################################################################
         
 # Let the beatings begin!
