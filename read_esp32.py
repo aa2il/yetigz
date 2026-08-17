@@ -7,6 +7,8 @@
 # Experiments with reading yeti via an esp32 - linux side
 # Simple program to read esp32 http/json packets
 #
+# NOTE - THIS PROGRAM WAS A STEPPING STONE AND IS NO LONGER USED OR MAINTAINED!
+#
 ################################################################################
 #
 # This program is free software: you can redistribute it and/or modify

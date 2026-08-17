@@ -22,16 +22,12 @@
 #      level shifter between the ESP32 and the RJ12 port on the box.
 #
 # To Do:
-#    - Need to add more abilities to Renogy code such as turning the
-#      load on and off.
 #    - Bring out some of the hardwired parameters to the command line, e.g.
 #      update interval
 #    - Try adding a udp wifi serer to the ESP32 code and make queries
 #      via wifi.  If successful, try powering the ESP32 from the 12V
 #      available at the RS232 port to get rid of USB ttether.
 #    - Put updater in separate thread so that gui is more responsive.
-#    - Take a look at the alternate python lib for Renergy devices - might be
-#      more complete.
 #
 ################################################################################
 #
@@ -399,7 +395,7 @@ class BATTERY():
         if iopt==1:
             # Toggle the button
             status=1-status
-            self.state=self.device.set_state(key,status)
+            self.state=self.device.set_state(key,status,VERBOSITY=0)
             self.update_plot(QUERY=False)
 
         # Color button depending on state

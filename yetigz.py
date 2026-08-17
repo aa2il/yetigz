@@ -9,6 +9,9 @@
 # I had a lot of trouble getting goalzero library to work and its probably
 # overkill.  It turns out it is very simple to use requests for this thing.
 #
+# NOTE - THIS PROGRAM WAS A STEPPING STONE AND IS NO LONGER USED OR MAINTAINED!
+#        USE solar_mon.py INSTEAD
+#
 ################################################################################
 #
 # This program is free software: you can redistribute it and/or modify

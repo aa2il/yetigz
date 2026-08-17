@@ -352,7 +352,7 @@ class Renogy_ESP32():
 ###############################################################################
 
 # Object to communicate with the yeti gz or renogy wander via esp32 interface
-class CHARGER_IO():
+class CHARGE_CONTROLLER():
 
     def __init__(self,name):
 
@@ -362,7 +362,7 @@ class CHARGER_IO():
         if name in ['Yeti','Renogy']:
             self.name = name
         else:
-            print('\nCHARGER_IO *** ERROR *** Unknwo Device Name ***',name)
+            print('\nCHARGE_CONTROLLER *** ERROR *** Unknwo Device Name ***',name)
             sys.exit(0)
         
         # Name of output file
@@ -429,11 +429,17 @@ class CHARGER_IO():
             txt=self.send_command('sysinfo')
         else:
             txt=self.send_command('reninfo')
-        b=txt.split('data=')[1].split('<EOR>')[0].strip()
-        #print('b=',b,type(b))
-        self.sysinfo=eval(b)
-        #self.sysinfo = resp.json()
-        print('sysinfo=',json.dumps(self.sysinfo,indent=4))
+        try:
+            b=txt.split('data=')[1].split('<EOR>')[0].strip()
+            #print('b=',b,type(b))
+            self.sysinfo=eval(b)
+            #self.sysinfo = resp.json()
+            print('sysinfo=',json.dumps(self.sysinfo,indent=4))
+        except Exception as e:
+            print("GET SYSINFO: An error occurred:", e)
+            print('\tDevice Name=',self.name)
+            print('\ttxt=',txt)
+            return None
         return self.sysinfo
 
     # Get state
@@ -451,6 +457,8 @@ class CHARGER_IO():
             print('state=',json.dumps(self.state,indent=4))
         except Exception as e:
             print("GET STATE: An error occurred:", e)
+            print('\tDevice Name=',self.name)
+            print('\ttxt=',txt)
             return None
 
         self.now=datetime.now()
@@ -458,17 +466,22 @@ class CHARGER_IO():
         return self.state
 
     # Change state of some attribute, e.g. toggle 12V port
-    def set_state(self,key,onoff):
+    def set_state(self,key,onoff,VERBOSITY=0):
         print('\n=========== SET STATE ==============\n')
 
         if self.name=='Yeti':
             cmd='SET '+key+' '+str(onoff)
         else:
-            print('*** SET STATE *** Not yet implemented for',name)
-            return
+            cmd='RENSET '+key+' '+str(onoff)
+        if VERBOSITY>0:
+            print('SET STATE: cmd=',cmd)
+            
         txt=self.send_command(cmd)
         b=txt.split('post=')[1].split('<EOR>')[0].strip()
-        #print('b=',b,type(b))
+        if VERBOSITY>0:
+            print('\ttxt=',txt)
+            print('\tb=',b,type(b))
+            
         self.state=eval(b)
         print('state=',json.dumps(self.state,indent=4))
         
