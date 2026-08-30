@@ -61,6 +61,7 @@ import math
 ###############################################################################
 
 YETI_ADDR='10.1.1.1'
+BATTERY_TYPES=['OPEN','SEALED','GEL','LITHIUM','CUSTOM']
 
 ###############################################################################
 
@@ -236,16 +237,22 @@ class BATTERY():
         self.Pout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.grid.addWidget(self.Pout,row,col,1,1)
 
+        col+=1
         if self.device.name=='Yeti':
-            col+=1
             self.BtnUSB = QPushButton('USB Ports')
             self.grid.addWidget(self.BtnUSB,row,col,1,1)
             self.BtnUSB.setToolTip('Click to turn USB Ports on/off')
             self.BtnUSB.clicked.connect( functools.partial( self.ToggleButton,button=self.BtnUSB,iopt=1 ))
             self.BtnUSB.setCheckable(True)
+            self.BatteryTypeBox = None
         else:
             self.BtnUSB = None
-        
+            self.BatteryTypeBox = QComboBox()
+            self.BatteryTypeBox.addItems(BATTERY_TYPES)
+            self.grid.addWidget(self.BatteryTypeBox,row,col,1,1)
+            self.BatteryTypeBox.setToolTip('Select Battery Type')
+            self.BatteryTypeBox.currentIndexChanged.connect(self.BatteryTypeSelect )
+            
         row+=1
         col = 0
         lab = QLabel('Charge:')
@@ -298,22 +305,15 @@ class BATTERY():
         self.grid.addWidget(self.WHout,row,col,1,1)
 
         col+=1
-        if 0:
-            self.BtnTime = QPushButton('All Time')
-            self.grid.addWidget(self.BtnTime,row,col,1,1)
-            self.BtnTime.setToolTip('Select Time Period for Graph')
-            self.BtnTime.clicked.connect( self.ToggleTimePeriod )
-            self.time_delta=99999
-        else:
-            self.Durations=['24 Hours','48 Hours','1 Week','All Time']
-            self.TimeDeltas=[24*1,24*2,24*7,24*365]
-            self.TimeBox = QComboBox()
-            self.TimeBox.addItems(self.Durations)
-            self.grid.addWidget(self.TimeBox,row,col,1,1)
-            self.TimeBox.setToolTip('Select Time Period for Graph')
-            self.TimeBox.currentIndexChanged.connect(self.TimePeriodSelect )
-            self.TimeBox.setCurrentIndex(0)
-            self.time_delta=self.TimeDeltas[0]
+        self.Durations=['24 Hours','48 Hours','1 Week','All Time']
+        self.TimeDeltas=[24*1,24*2,24*7,24*365]
+        self.TimeBox = QComboBox()
+        self.TimeBox.addItems(self.Durations)
+        self.grid.addWidget(self.TimeBox,row,col,1,1)
+        self.TimeBox.setToolTip('Select Time Period for Graph')
+        self.TimeBox.currentIndexChanged.connect(self.TimePeriodSelect )
+        self.TimeBox.setCurrentIndex(0)
+        self.time_delta=self.TimeDeltas[0]
         
         # Create canvas to hold the plot
         row+=1
@@ -331,6 +331,7 @@ class BATTERY():
         # Create initial data arrays & plot data
         self.canvas.stuffData(xdata,ydata)
         self.update_plot()
+        self.BatteryTypeSelect(-1)
 
         # Setup a timer to trigger the redraw by calling update_plot every n secconds
         self.timer = QTimer()
@@ -339,15 +340,31 @@ class BATTERY():
         self.timer.start()
 
         
+    # Function to select Battery Type (Renogy CC)
+    def BatteryTypeSelect(self,i):
+        if self.device.name=='Yeti':
+            print('BATTERY TYPE SELECT - Invalid Device Name')
+            return
+
+        key='batteryType'
+        if i==-1:
+            bt=self.state[key]
+            idx=BATTERY_TYPES.index(bt)
+            self.BatteryTypeBox.setCurrentIndex(idx)
+        else:
+            bt=BATTERY_TYPES[i]
+            self.state=self.device.set_state(key,bt,VERBOSITY=0)
+            idx=i
+        print('BATTERY TYPE SELECT: i=',i,idx,'\tbt=',bt)
+        
     # Function to select time period for graph
     def TimePeriodSelect(self,i):
-        txt=self.Durations[i]    #.split(" ")
+        txt=self.Durations[i]  
         self.time_delta=self.TimeDeltas[i]
         print('TIME PERIOD SELECT: i=',i,
               '\ttxt=',txt,
               '\tTime Delta=',self.time_delta)
         self.update_plot(QUERY=False)
-        
         
     # Function to toggle button statte
     def ToggleTimePeriod(self):
