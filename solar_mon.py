@@ -57,12 +57,44 @@ from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import math
+import threading
 
 ###############################################################################
 
 YETI_ADDR='10.1.1.1'
 BATTERY_TYPES=['OPEN','SEALED','GEL','LITHIUM','CUSTOM']
+UPDATE_INTERVAL=20     # seconds
 
+###############################################################################
+
+# Class to monitor device state
+class StateUpdater:
+    def __init__(self,seconds,P):
+        print('Updater Starting ....')
+        self.sec=seconds
+        self.P = P
+
+        # Init work thread 
+        self.Thread = threading.Timer(self.sec, self.Update_State)
+        self.Thread.daemon=True            # This prevents thread from blocking shutdown
+        self.Thread.start()
+        
+    def Update_State(self):
+        print('\n****** HELLO FROM UPDATER ******\n')
+
+        # Get state info for both devices
+        print('Probing Yeti ...')
+        self.P.yeti.device.get_state()
+        print('Probing Renogy ...')
+        self.P.renogy.device.get_state()
+
+        # That's a wrap for this time around - get ready to do it all over again
+        print('... Thats a wrap!')
+        self.P.Timer = threading.Timer(self.sec, self.Update_State)
+        self.P.Timer.daemon=True
+        self.P.Timer.start()
+        
+        
 ###############################################################################
 
 class theCanvas(FigureCanvas):
@@ -329,13 +361,14 @@ class BATTERY():
             self.grid.addWidget(toolbar,row,col,1,ncols)
 
         # Create initial data arrays & plot data
+        self.state   = self.device.state
         self.canvas.stuffData(xdata,ydata)
         self.update_plot()
         self.BatteryTypeSelect(-1)
 
         # Setup a timer to trigger the redraw by calling update_plot every n secconds
         self.timer = QTimer()
-        self.timer.setInterval(1000*15)
+        self.timer.setInterval(1000*UPDATE_INTERVAL)
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
 
@@ -343,9 +376,15 @@ class BATTERY():
     # Function to select Battery Type (Renogy CC)
     def BatteryTypeSelect(self,i):
         if self.device.name=='Yeti':
-            print('BATTERY TYPE SELECT - Invalid Device Name')
+            #print('BATTERY TYPE SELECT - Invalid Device Name',self.device.name)
             return
 
+        if not self.state:
+            print('BATTERY TYPE SELECT - Current state data not available',self.device.name)
+            self.BatteryTypeBox.setPlaceholderText("Battery Type ...")
+            self.BatteryTypeBox.setCurrentIndex(-1)
+            return
+        
         key='batteryType'
         if i==-1:
             bt=self.state[key]
@@ -484,14 +523,16 @@ class BATTERY():
             
     # Routine to update plot with latest data
     def update_plot(self,QUERY=True):
+        print('UPDATE PLOT ...',self.device.name)
 
         # Query the yeti gz
         now=datetime.now()
-        if QUERY:
-            self.state=self.device.get_state()
+        #if QUERY:
+        #    self.state=self.device.get_state()
+        self.state=self.device.state
         if not self.state:
-            print('Unable to read Yeti state - Try again ... :-(')
-            self.fp.write('%s Unable to read Yeti State\n' % \
+            print('Unable to read device state - ',self.device.name,' - Try again ... :-(')
+            self.fp.write('%s Unable to read device State\n' % \
                           (now.strftime('%Y-%m-%d %H:%M:%S')))
             self.fp.flush()
             return
@@ -531,6 +572,9 @@ class BATTERY():
         txt=str(Eout)+' Wh out'
         self.WHout.setText(txt)
 
+        # Refresh Battery Type Pull-down
+        self.BatteryTypeSelect(-1)
+        
         # The time stamp is nonsense - circa 1970!
         if 0:
             ts=self.state['timestamp']
@@ -653,5 +697,6 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = MainWindow(YETI_ADDR)
+    Updater = StateUpdater(UPDATE_INTERVAL,w)
     app.exec()
 
