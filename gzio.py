@@ -371,10 +371,16 @@ class CHARGE_CONTROLLER():
         else:
             self.fname='wanderer.dat'
 
-        # Open connection to esp32 web client
+        # Open connection to esp32 client
+        print('CHARGE CONTROLLER Init: Opening ESP32 serial port - DEVICE_ID=',
+              DEVICE_ID,' ...')
         #list_all_serial_devices(True)
         device,vid_pid=find_serial_device(DEVICE_ID,0) 
         print('\tdevice=',device,'\tvid_pid=',vid_pid)
+        if device==None:
+            print('\n\t *** UNABLE TO FIND ESP32 INTERFACE DEVICE :-( ***\n')
+            list_all_serial_devices(True)
+            sys.exit(0)
 
         self.ser = serial.Serial(device,BAUD,timeout=1) 
         print('\tser=',self.ser,'\n')
@@ -477,7 +483,12 @@ class CHARGE_CONTROLLER():
             print('SET STATE: cmd=',cmd)
             
         txt=self.send_command(cmd)
-        b=txt.split('post=')[1].split('<EOR>')[0].strip()
+        try:
+            b=txt.split('post=')[1].split('<EOR>')[0].strip()
+        except:
+            print('\tOooops! Error processing response')
+            print('\ttxt=',txt)
+            return None
         if VERBOSITY>0:
             print('\ttxt=',txt)
             print('\tb=',b,type(b))

@@ -27,7 +27,6 @@
 #    - Try adding a udp wifi serer to the ESP32 code and make queries
 #      via wifi.  If successful, try powering the ESP32 from the 12V
 #      available at the RS232 port to get rid of USB ttether.
-#    - Put updater in separate thread so that gui is more responsive.
 #
 ################################################################################
 #
@@ -63,7 +62,7 @@ import threading
 
 YETI_ADDR='10.1.1.1'
 BATTERY_TYPES=['OPEN','SEALED','GEL','LITHIUM','CUSTOM']
-UPDATE_INTERVAL=20     # seconds
+UPDATE_INTERVAL=20     # Update interval in seconds
 
 ###############################################################################
 
@@ -75,12 +74,12 @@ class StateUpdater:
         self.P = P
 
         # Init work thread 
-        self.Thread = threading.Timer(self.sec, self.Update_State)
+        self.Thread = threading.Timer(0.1, self.Update_State)
         self.Thread.daemon=True            # This prevents thread from blocking shutdown
         self.Thread.start()
         
     def Update_State(self):
-        print('\n****** HELLO FROM UPDATER ******\n')
+        #print('\n****** HELLO FROM UPDATER ******\n')
 
         # Get state info for both devices
         print('Probing Yeti ...')
@@ -107,38 +106,43 @@ class theCanvas(FigureCanvas):
 
         self.lines = None
         self.xdata = []
-        self.ydata = []
+        self.ydata = [[],[],[],[]]
 
     def stuffData(self,xdata,ydata):
-        self.xdata = xdata
-        self.ydata = ydata
+        if xdata!=None and ydata!=None:
+            self.xdata = xdata
+            self.ydata = ydata
+        #print('STUFF DATA: sizes:',len(self.xdata),len(self.ydata))
 
     def updatePlots(self,xdata,ydata,dt):
 
-        if xdata==None:
-            return
-        if self.xdata==None or len(self.xdata)==0:
-            self.xdata = [xdata]
-            if self.ydata==None:
-                self.ydata = []
-            for i in range(len(ydata)):
-                self.ydata.append([ydata[i]])
-        else:            
+        # Append new state data, if it exits
+        #print(xdata)
+        #print(ydata)
+        #print(self.xdata)
+        #print(self.ydata)
+        if ydata!=None:
             self.xdata.append(xdata)
             for i in range(len(ydata)):
                 self.ydata[i].append(ydata[i])
-        #self.xmin=min(self.xdata)
-        self.xmax=max(self.xdata)
-        self.xmin=max( min(self.xdata) , self.xmax-timedelta(hours=dt) )
-
+        else:
+            return
+        if self.xdata!=None:
+            self.xmax=max(self.xdata)
+            self.xmin=max( min(self.xdata) , self.xmax-timedelta(hours=dt) )
+        elif xdata!=None:
+            self.xmax=xdata
+            self.xmin=xdata
+            
+        #print('UPDATE PLOTS: sizes:',len(self.xdata),len(self.ydata))
         if self.lines==None:
-            line,=self.axes.plot(xdata, ydata[0], 'r',label='Power In')
+            line,=self.axes.plot(self.xdata, self.ydata[0], 'r',label='Power In')
             self.lines=[line]
-            line,=self.axes.plot(xdata, ydata[1], 'b',label='Power Out')
+            line,=self.axes.plot(self.xdata, self.ydata[1], 'b',label='Power Out')
             self.lines.append(line)
-            line,=self.axes2.plot(xdata, ydata[2], 'g',label='% Charged')
+            line,=self.axes2.plot(self.xdata, self.ydata[2], 'g',label='% Charged')
             self.lines.append(line)
-            line,=self.axes2.plot(xdata, ydata[3], 'k',label='Temperature')
+            line,=self.axes2.plot(self.xdata, self.ydata[3], 'k',label='Temperature')
             self.lines.append(line)
             
             self.fig.autofmt_xdate()
@@ -165,7 +169,6 @@ class BATTERY():
         
         # Open connection to solar device
         self.device=CHARGE_CONTROLLER(name)
-        #self.device   = Charger()
         self.state   = self.device.state
         self.sysinfo = self.device.sysinfo
 
@@ -361,6 +364,7 @@ class BATTERY():
             self.grid.addWidget(toolbar,row,col,1,ncols)
 
         # Create initial data arrays & plot data
+        print('Creating initial plot ...')
         self.state   = self.device.state
         self.canvas.stuffData(xdata,ydata)
         self.update_plot()
@@ -387,10 +391,12 @@ class BATTERY():
         
         key='batteryType'
         if i==-1:
+            print('BATTERY TYPE SELECT: Setting combo box from state...')
             bt=self.state[key]
             idx=BATTERY_TYPES.index(bt)
             self.BatteryTypeBox.setCurrentIndex(idx)
         else:
+            print('BATTERY TYPE SELECT: Setting device battery type from combo box ...')
             bt=BATTERY_TYPES[i]
             self.state=self.device.set_state(key,bt,VERBOSITY=0)
             idx=i
@@ -403,7 +409,7 @@ class BATTERY():
         print('TIME PERIOD SELECT: i=',i,
               '\ttxt=',txt,
               '\tTime Delta=',self.time_delta)
-        self.update_plot(QUERY=False)
+        self.update_plot()
         
     # Function to toggle button statte
     def ToggleTimePeriod(self):
@@ -423,7 +429,7 @@ class BATTERY():
             self.BtnTime.setText('All Time')
             self.time_delta=24*365
 
-        self.update_plot(QUERY=False)
+        self.update_plot()
         
     # Function to toggle button statte
     def ToggleButton(self,button=None,iopt=0):
@@ -452,7 +458,7 @@ class BATTERY():
             # Toggle the button
             status=1-status
             self.state=self.device.set_state(key,status,VERBOSITY=0)
-            self.update_plot(QUERY=False)
+            self.update_plot()
 
         # Color button depending on state
         if status==1:
@@ -476,7 +482,7 @@ class BATTERY():
 
     def compute_energy(self,xdata,ydata,dhours):
         
-        if xdata==None:
+        if xdata==None or len(xdata)<1:
             return 0,0
         else:
             t=xdata
@@ -522,84 +528,83 @@ class BATTERY():
 
             
     # Routine to update plot with latest data
-    def update_plot(self,QUERY=True):
+    def update_plot(self):
         print('UPDATE PLOT ...',self.device.name)
 
         # Query the yeti gz
         now=datetime.now()
-        #if QUERY:
-        #    self.state=self.device.get_state()
         self.state=self.device.state
-        if not self.state:
-            print('Unable to read device state - ',self.device.name,' - Try again ... :-(')
-            self.fp.write('%s Unable to read device State\n' % \
-                          (now.strftime('%Y-%m-%d %H:%M:%S')))
-            self.fp.flush()
-            return
 
         # Extract values of interest and update gui text boxes
-        PWRin   = self.state['wattsIn']
-        PWRout  = self.state['wattsOut']
-        Pct     = self.state['socPercent']
-        #print('PWR in=',PWRin,'W\tPWR out=',PWRout,'W\tCharge %=',Pct,'%')
+        if self.state:
+            PWRin   = self.state['wattsIn']
+            PWRout  = self.state['wattsOut']
+            Pct     = self.state['socPercent']
+            #print('PWR in=',PWRin,'W\tPWR out=',PWRout,'W\tCharge %=',Pct,'%')
 
-        self.Pin.setText(str(PWRin)+' W')
-        self.Pout.setText(str(PWRout)+' W')
-        self.Voltage.setText(str(self.state['volts'])+' V')
-        self.Charge.setText(str(self.state['socPercent'])+' %')
+            self.Pin.setText(str(PWRin)+' W')
+            self.Pout.setText(str(PWRout)+' W')
+            self.Voltage.setText(str(self.state['volts'])+' V')
+            self.Charge.setText(str(self.state['socPercent'])+' %')
 
-        # There can be hiccups in the temperature read
-        deg_c=self.state['temperature']
-        if deg_c>50 or deg_c==0.0:
-            deg_c=float('nan')
-        else:
-            deg_f=round(9.*deg_c/5.+32.)
-            txt=str(deg_f)+' F / '+str(deg_c)+' C'
-            self.Temp.setText(txt)
+            # There can be hiccups in the temperature read
+            deg_c=self.state['temperature']
+            if deg_c>50 or deg_c==0.0:
+                deg_c=float('nan')
+            else:
+                deg_f=round(9.*deg_c/5.+32.)
+                txt=str(deg_f)+' F / '+str(deg_c)+' C'
+                self.Temp.setText(txt)
 
-        if self.state['isCharging']:
-            txt='Yes'
-        else:
-            txt='No'
-        self.Charging.setText(txt)
+            if self.state['isCharging']:
+                txt='Yes'
+            else:
+                txt='No'
+            self.Charging.setText(txt)
 
-        Ein,Eout=self.compute_energy(self.canvas.xdata,
-                                     self.canvas.ydata,
-                                     self.time_delta)
-        #print(Ein,Eout)
-        txt=str(Ein)+' Wh in'
-        self.WHin.setText(txt)
-        txt=str(Eout)+' Wh out'
-        self.WHout.setText(txt)
+            Ein,Eout=self.compute_energy(self.canvas.xdata,
+                                         self.canvas.ydata,
+                                         self.time_delta)
+            #print(Ein,Eout)
+            txt=str(Ein)+' Wh in'
+            self.WHin.setText(txt)
+            txt=str(Eout)+' Wh out'
+            self.WHout.setText(txt)
 
-        # Refresh Battery Type Pull-down
-        self.BatteryTypeSelect(-1)
+            # Refresh Battery Type Pull-down
+            self.BatteryTypeSelect(-1)
         
-        # The time stamp is nonsense - circa 1970!
-        if 0:
-            ts=self.state['timestamp']
-            ts2 = datetime.fromtimestamp(ts,tz=timezone.utc)
-            print('ts=',ts,'\tts2=',ts2)
-            print('now=',now,'\t=',now.timestamp())
+            # The time stamp is nonsense - circa 1970!
+            if 0:
+                ts=self.state['timestamp']
+                ts2 = datetime.fromtimestamp(ts,tz=timezone.utc)
+                print('ts=',ts,'\tts2=',ts2)
+                print('now=',now,'\t=',now.timestamp())
 
-        self.ToggleButton(button=self.Btn12V,iopt=0)
-        self.ToggleButton(button=self.BtnUSB,iopt=0)
-        self.ToggleButton(button=self.BtnAC,iopt=0)
+            self.ToggleButton(button=self.Btn12V,iopt=0)
+            self.ToggleButton(button=self.BtnUSB,iopt=0)
+            self.ToggleButton(button=self.BtnAC,iopt=0)
                            
-        # Save data to log file
-        self.fp.write('%s,%3.1f,%3.1f,%i,%.0f,%i\n' % \
-                      (now.strftime('%Y-%m-%d %H:%M:%S'),
-                       PWRin,PWRout,
-                       Pct,deg_c,
-                       self.state['isCharging'] ))
-        self.fp.flush()
+            # Save data to log file
+            self.fp.write('%s,%3.1f,%3.1f,%i,%.0f,%i\n' % \
+                          (now.strftime('%Y-%m-%d %H:%M:%S'),
+                           PWRin,PWRout,
+                           Pct,deg_c,
+                           self.state['isCharging'] ))
+            self.fp.flush()
+
+            data=[PWRin,PWRout,Pct,deg_c]
+        else:
+            print('UPDATE PLOT: No new state data for',self.device.name)
+            data=None
 
         # Plot the latest and greatest readings and redraw the canvas
-        self.canvas.updatePlots(now,[PWRin,PWRout,Pct,deg_c],self.time_delta)
+        self.canvas.updatePlots(now,data,self.time_delta)
         self.canvas.draw()
 
     # Function to parse old log file so we can plot all available data
     def parse_log_file(self,fname):
+        print('PARSE LOG: Reading',fname,'...')
 
         try:
             fp = open(fname,'r')
@@ -619,7 +624,7 @@ class BATTERY():
             #print("Line{}: {}".format(count, line.strip()))
 
             if 'Unable' in line:
-                print(line)
+                #print(line)
                 nfaults += 1
                 continue
             elif 'thingName' in line:
@@ -637,14 +642,14 @@ class BATTERY():
                 if p1>100:
                     p1=float('nan')
                     nfaults += 1
-                    print(line)
+                    #print(line)
                 PWRin.append(p1)
 
                 p2=float(a[2])
                 if p2>100 or p2==0.0:
                     p2=float('nan')
                     nfaults += 1
-                    print(line)
+                    #print(line)
                 PWRout.append(p2)
                 
                 Pct.append(int(float(a[3])))
@@ -653,7 +658,7 @@ class BATTERY():
                 if t>50 or t==0.0:
                     t=float('nan')
                     nfaults += 1
-                    print(line)
+                    #print(line)
                 temp.append(t)
                 
                 charging.append(int(a[5]))
