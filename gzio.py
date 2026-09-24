@@ -169,7 +169,7 @@ class Yeti_ESP32():
             #print('txt=',txt)
             cnt+=1
             if cnt>5:
-                print('No response')
+                print('Yeti_ESP32 SEND COMMAND: No response')
                 break
             else:
                 time.sleep(1)
@@ -284,7 +284,7 @@ class Renogy_ESP32():
             #print('txt=',txt)
             cnt+=1
             if cnt>5:
-                print('No response')
+                print('Renogy_ESP32 SEND COMMAND: No response')
                 break
             else:
                 time.sleep(1)
@@ -411,7 +411,7 @@ class CHARGE_CONTROLLER():
             #print('txt=',txt)
             cnt+=1
             if cnt>5:
-                print('No response')
+                print('CHARGE CONTROLLER - SEND COMMAND: No response')
                 break
             else:
                 time.sleep(1)

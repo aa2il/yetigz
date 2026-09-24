@@ -27,6 +27,7 @@
 #    - Try adding a udp wifi serer to the ESP32 code and make queries
 #      via wifi.  If successful, try powering the ESP32 from the 12V
 #      available at the RS232 port to get rid of USB ttether.
+#    - Make sure all threads shut down cleanly
 #
 ################################################################################
 #
@@ -676,6 +677,9 @@ class MainWindow(QMainWindow):
     def __init__(self,ADDR):
         super().__init__()
 
+        # Init
+        self.Stopper = threading.Event()
+
         # Create main window
         self.win  = QWidget()
         self.setCentralWidget(self.win)
@@ -695,7 +699,34 @@ class MainWindow(QMainWindow):
         # Ready to roll!
         self.show()
 
+    # Capture 'x' in upper right corner so that we can shut down gracefully
+    # This is magically connected to this event
+    def closeEvent(self, event):
+        print("()(()()()()()( User has clicked the red x on the main window ()()()()()))")
+
+        #print('closeEvent: Stopping timers...')
+        #self.Timer.stop()
+
+        print('\nList of running threads:')
+        threads = threading.enumerate()    
+        for th in threads:
+            print(th.name,':\t',th)
         
+        print("\nWaiting for threads to quit...")
+        for th in threads:
+            self.Stopper.set()
+            name = th.name
+            if name=='MainThread':
+                continue
+            print('\tWaiting for thread ',name,' to quit ...')
+            th.join(5.0)
+            print('\t... Thread ',name,' has quit.')
+            
+        print("Closing down gui ...")
+        QApplication.quit()
+
+        print("\nBleep-a-da-Bleep - That's all folks!")
+
 ###############################################################################
         
 # Let the beatings begin!
