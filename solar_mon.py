@@ -51,7 +51,7 @@ import functools
 
 from widgets_qt import QTLIB
 exec('from '+QTLIB+'.QtWidgets import QMainWindow,QWidget,QTabWidget,QGridLayout,QPushButton,QLabel,QApplication,QComboBox')
-exec('from '+QTLIB+'.QtCore import Qt,QTimer')
+exec('from '+QTLIB+'.QtCore import Qt,QTimer,QThread,pyqtSignal')
 
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
@@ -68,31 +68,45 @@ UPDATE_INTERVAL=20     # Update interval in seconds
 ###############################################################################
 
 # Class to monitor device state
-class StateUpdater:
+class StateUpdaterThread(QThread):
+    sig1 = pyqtSignal(int)
+    sig2 = pyqtSignal(int)
+
     def __init__(self,seconds,P):
+        super().__init__()
+        
         print('Updater Starting ....')
         self.sec=seconds
         self.P = P
 
+        """
         # Init work thread 
-        self.Thread = threading.Timer(0.1, self.Update_State)
+        self.Thread = threading.Timer(1.0, self.Update_State)
         self.Thread.daemon=True            # This prevents thread from blocking shutdown
         self.Thread.start()
+        """
+
+    def run(self):
+
+        while True:
+            time.sleep(self.sec)
+            self.Update_State()
         
     def Update_State(self):
         #print('\n****** HELLO FROM UPDATER ******\n')
 
         # Get state info for both devices
         print('Probing Yeti ...')
-        self.P.yeti.device.get_state()
+        state1=self.P.yeti.device.get_state()
+        print('state1=',state1)
+        self.sig1.emit(0)
         print('Probing Renogy ...')
-        self.P.renogy.device.get_state()
+        state2=self.P.renogy.device.get_state()
+        print('state2=',state2)
+        self.sig2.emit(1)
 
         # That's a wrap for this time around - get ready to do it all over again
         print('... Thats a wrap!')
-        self.P.Timer = threading.Timer(self.sec, self.Update_State)
-        self.P.Timer.daemon=True
-        self.P.Timer.start()
         
         
 ###############################################################################
@@ -169,11 +183,11 @@ class BATTERY():
         self.parent=parent
         
         # Open connection to solar device
-        self.device=CHARGE_CONTROLLER(name)
+        self.device  = CHARGE_CONTROLLER(name)
         self.state   = self.device.state
         self.sysinfo = self.device.sysinfo
 
-        # Open log file - read in past telemtry
+        # Read in past telemtry
         [xdata,ydata]=self.parse_log_file(self.device.fname)
         self.fp = open(self.device.fname,'a+')
 
@@ -372,12 +386,13 @@ class BATTERY():
         self.BatteryTypeSelect(-1)
 
         # Setup a timer to trigger the redraw by calling update_plot every n secconds
+        """
         self.timer = QTimer()
         self.timer.setInterval(1000*UPDATE_INTERVAL)
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
+        """
 
-        
     # Function to select Battery Type (Renogy CC)
     def BatteryTypeSelect(self,i):
         if self.device.name=='Yeti':
@@ -393,9 +408,13 @@ class BATTERY():
         key='batteryType'
         if i==-1:
             print('BATTERY TYPE SELECT: Setting combo box from state...')
-            bt=self.state[key]
-            idx=BATTERY_TYPES.index(bt)
-            self.BatteryTypeBox.setCurrentIndex(idx)
+            try:
+                bt=self.state[key]
+                idx=BATTERY_TYPES.index(bt)
+                self.BatteryTypeBox.setCurrentIndex(idx)
+            except:
+                print('\t*** Oooops! \tkey=',key)
+                print('\t\t\tkeys=',self.state.keys())
         else:
             print('BATTERY TYPE SELECT: Setting device battery type from combo box ...')
             bt=BATTERY_TYPES[i]
@@ -695,6 +714,12 @@ class MainWindow(QMainWindow):
         # Add tabs for Yeti GZ and Renogy Wander
         self.yeti = BATTERY(self.tabs,'Yeti')
         self.renogy = BATTERY(self.tabs,'Renogy')
+
+        # Start thread to update state for each device
+        self.Updater = StateUpdaterThread(UPDATE_INTERVAL,self)
+        self.Updater.sig1.connect(self.yeti.update_plot)
+        self.Updater.sig2.connect(self.renogy.update_plot)
+        self.Updater.start()
         
         # Ready to roll!
         self.show()
@@ -733,6 +758,5 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = MainWindow(YETI_ADDR)
-    Updater = StateUpdater(UPDATE_INTERVAL,w)
     app.exec()
 

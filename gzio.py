@@ -121,6 +121,7 @@ class YetiGZ():
 
 ###############################################################################
 
+"""
 # Object to communicate with the yeti gz via esp32 interface
 # NO LONGER NEEDED - USE CHARGE_CONTROLLER CLASS BELOW
 class Yeti_ESP32():
@@ -348,7 +349,7 @@ class Renogy_ESP32():
 
         return self.state
 
-
+"""
 ###############################################################################
 
 # Object to communicate with the yeti gz or renogy wander via esp32 interface
@@ -370,6 +371,11 @@ class CHARGE_CONTROLLER():
             self.fname='gz.dat'
         else:
             self.fname='wanderer.dat'
+
+        # Open log file for this device
+        logname = self.name+'.LOG'
+        self.fp_log = open(logname,'w')
+        self.fp_log.write('\n**************************************************\n')
 
         # Open connection to esp32 client
         print('CHARGE CONTROLLER Init: Opening ESP32 serial port - DEVICE_ID=',
@@ -394,12 +400,17 @@ class CHARGE_CONTROLLER():
         while self.ser and self.ser.in_waiting>0:
             txt1 = self.ser.read_all().decode("utf-8",'ignore')
             txt += txt1
+            self.fp_log.write('+++ %s' % (txt1) )
+            self.fp_log.flush()
             time.sleep(1)
         #print('txt=',txt)
 
         return txt
 
     def send_command(self,cmd):
+        self.fp_log.write('\nSEND_COMMAND %s ...\n' % (cmd) )
+        self.fp_log.flush()
+
         self.ser.write((cmd+'\n').encode())
         self.ser.flush()
         time.sleep(.1)
@@ -420,6 +431,9 @@ class CHARGE_CONTROLLER():
         return txt
         
     def quit(self):
+        self.fp_log.write('\nQUIT ...\n')
+        self.fp_log.flush()
+
         print('\nQuitting ...\n')
         self.ser.close()
         sys.exit(0)
@@ -429,8 +443,10 @@ class CHARGE_CONTROLLER():
     def get_sysinfo(self,TimeOut=10):
         print('\n=========== GET SYSINFO ==============\n')
         self.now=datetime.now()
-        print('now=',self.now)
-        
+        #print('now=',self.now)
+        self.fp_log.write('\nGET_SYSINFO @ %s ...' % (self.now) )
+        self.fp_log.flush()
+
         if self.name=='Yeti':
             txt=self.send_command('sysinfo')
         else:
@@ -451,11 +467,16 @@ class CHARGE_CONTROLLER():
     # Get state
     def get_state(self,TimeOut=10):
         print('\n=========== GET STATE ==============\n')
+        self.now=datetime.now()
+        self.fp_log.write('\nGET_STATE @ %s ...' % (self.now) )
+        self.fp_log.flush()
 
         if self.name=='Yeti':
-            txt=self.send_command('state')
+            cmd='STATE'
         else:
-            txt=self.send_command('renstate')
+            cmd='RENSTATE'
+        txt=self.send_command(cmd)
+        
         try:
             b=txt.split('data=')[1].split('<EOR>')[0].strip()
             #print('b=',b,type(b))
@@ -467,13 +488,16 @@ class CHARGE_CONTROLLER():
             print('\ttxt=',txt)
             return None
 
-        self.now=datetime.now()
-        print(self.now)
+        #self.now=datetime.now()
+        #print(self.now)
         return self.state
 
     # Change state of some attribute, e.g. toggle 12V port
     def set_state(self,key,onoff,VERBOSITY=0):
         print('\n=========== SET STATE ==============\n')
+        self.now=datetime.now()
+        self.fp_log.write('\nSET_STATE @ %s ...' % (self.now) )
+        self.fp_log.flush()
 
         if self.name=='Yeti':
             cmd='SET '+key+' '+str(onoff)
@@ -496,8 +520,8 @@ class CHARGE_CONTROLLER():
         self.state=eval(b)
         print('state=',json.dumps(self.state,indent=4))
         
-        self.now=datetime.now()
-        print(self.now)
+        #self.now=datetime.now()
+        #print(self.now)
         return self.state
 
         return self.state
