@@ -360,6 +360,7 @@ class CHARGE_CONTROLLER():
         self.now=datetime.now()
         self.sysinfo = None
         self.state = None
+        self.nerrors=0
         if name in ['Yeti','Renogy']:
             self.name = name
         else:
@@ -422,7 +423,10 @@ class CHARGE_CONTROLLER():
             #print('txt=',txt)
             cnt+=1
             if cnt>5:
+                self.nerrors+=1
                 print('CHARGE CONTROLLER - SEND COMMAND: No response')
+                self.fp_log.write('CHARGE CONTROLLER - SEND COMMAND: No response')
+                self.fp_log.flush()
                 break
             else:
                 time.sleep(1)
@@ -461,6 +465,12 @@ class CHARGE_CONTROLLER():
             print("GET SYSINFO: An error occurred:", e)
             print('\tDevice Name=',self.name)
             print('\ttxt=',txt)
+
+            self.fp_log.write("GET SYSINFO: An error occurred: %s" % (e) )
+            self.fp_log.write('\tDevice Name=%s' % (self.name) )
+            self.fp_log.write('\ttxt=%s' % (txt) )
+            self.fp_log.flush()
+            
             return None
         return self.sysinfo
 
@@ -486,6 +496,12 @@ class CHARGE_CONTROLLER():
             print("GET STATE: An error occurred:", e)
             print('\tDevice Name=',self.name)
             print('\ttxt=',txt)
+
+            self.fp_log.write("GET STATE: An error occurred: %s" % (e) )
+            self.fp_log.write('\tDevice Name=%s' % (self.name) )
+            self.fp_log.write('\ttxt=%s' % (txt) )
+            self.fp_log.flush()
+            
             return None
 
         #self.now=datetime.now()
@@ -509,10 +525,15 @@ class CHARGE_CONTROLLER():
         txt=self.send_command(cmd)
         try:
             b=txt.split('post=')[1].split('<EOR>')[0].strip()
-        except:
-            print('\tOooops! Error processing response')
+        except Exception as e:
+            print("SET STATE: An error occurred:", e)
             print('\ttxt=',txt)
+
+            self.fp_log.write("SET STATE: An error occurred: %s" % (e) )
+            self.fp_log.write('\tDevice Name=%s' % (self.name) )
+            self.fp_log.write('\ttxt=%s' % (txt) )
             return None
+        
         if VERBOSITY>0:
             print('\ttxt=',txt)
             print('\tb=',b,type(b))

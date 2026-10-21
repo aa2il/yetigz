@@ -22,6 +22,8 @@
 #      level shifter between the ESP32 and the RJ12 port on the box.
 #
 # To Do:
+#    - Why does ESP32 seem to crash?  Auto restart it when this happens
+#    - 200W scale for new solar panels (left axis)
 #    - Bring out some of the hardwired parameters to the command line, e.g.
 #      update interval
 #    - Try adding a udp wifi serer to the ESP32 code and make queries
@@ -104,6 +106,9 @@ class StateUpdaterThread(QThread):
         state2=self.P.renogy.device.get_state()
         print('state2=',state2)
         self.sig2.emit(1)
+
+        if self.P.yeti.device.nerrors>=10 or self.P.renogy.device.nerrors>=10:
+            print('Ooooops!  Looks like the ESP32 controller has crashed - time for a restart!')        
 
         # That's a wrap for this time around - get ready to do it all over again
         print('... Thats a wrap!')
