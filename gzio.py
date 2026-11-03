@@ -441,7 +441,14 @@ class CHARGE_CONTROLLER():
         print('\nQuitting ...\n')
         self.ser.close()
         sys.exit(0)
-    
+
+
+    # Function to stop ESP32
+    def stop_esp32(self):
+        print('\n=========== STOP ESP32 ==============\n')
+        txt=self.send_command('exit')
+        print('\ttxt=',txt)
+        return txt
         
     # Function to query sysinfo
     def get_sysinfo(self,TimeOut=10):

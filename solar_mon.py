@@ -226,6 +226,9 @@ class BATTERY():
         #print(self.sysinfo.keys())
         #print('model=',self.sysinfo['model'])
 
+        # Enable this to stop esp32 so we can use thonny to upload new client code
+        #self.device.stop_esp32()
+
         # Add gui tab for this device
         self.tab = QWidget()
         parent.addTab(self.tab,self.device.name)
