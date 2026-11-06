@@ -50,6 +50,7 @@ import sys
 import time
 from datetime import timedelta,datetime,timezone
 import functools
+import numpy as np
 
 from widgets_qt import QTLIB
 exec('from '+QTLIB+'.QtWidgets import QMainWindow,QWidget,QTabWidget,QGridLayout,QPushButton,QLabel,QApplication,QComboBox')
@@ -81,18 +82,11 @@ class StateUpdaterThread(QThread):
         self.sec=seconds
         self.P = P
 
-        """
-        # Init work thread 
-        self.Thread = threading.Timer(1.0, self.Update_State)
-        self.Thread.daemon=True            # This prevents thread from blocking shutdown
-        self.Thread.start()
-        """
-
-    def run(self):
-
-        while True:
-            time.sleep(self.sec)
-            self.Update_State()
+    #def run(self):
+    #
+    #    while True:
+    #        time.sleep(self.sec)
+    #        self.Update_State()
         
     def Update_State(self):
         #print('\n****** HELLO FROM UPDATER ******\n')
@@ -100,18 +94,22 @@ class StateUpdaterThread(QThread):
         # Get state info for both devices
         print('Probing Yeti ...')
         state1=self.P.yeti.device.get_state()
-        print('state1=',state1)
+        #print('state1=',state1)
         self.sig1.emit(0)
+
         print('Probing Renogy ...')
         state2=self.P.renogy.device.get_state()
-        print('state2=',state2)
+        #print('state2=',state2)
         self.sig2.emit(1)
 
         if self.P.yeti.device.nerrors>=10 or self.P.renogy.device.nerrors>=10:
             print('Ooooops!  Looks like the ESP32 controller has crashed - time for a restart!')        
 
         # That's a wrap for this time around - get ready to do it all over again
-        print('... Thats a wrap!')
+        print('... Thats a wrap - restarting updater timer ...')
+        self.P.Timer = threading.Timer(UPDATE_INTERVAL, self.P.Updater.Update_State)
+        self.P.Timer.daemon=True              
+        self.P.Timer.start()
         
         
 ###############################################################################
@@ -127,6 +125,12 @@ class theCanvas(FigureCanvas):
         self.lines = None
         self.xdata = []
         self.ydata = [[],[],[],[]]
+
+        self.xmax     = None
+        self.ymin     = 0
+        self.ymax     = 100.5
+        self.xmax_old = None
+        #self.ymax_old = None
 
     def stuffData(self,xdata,ydata):
         if xdata!=None and ydata!=None:
@@ -155,14 +159,18 @@ class theCanvas(FigureCanvas):
             self.xmin=xdata
             
         #print('UPDATE PLOTS: sizes:',len(self.xdata),len(self.ydata))
+        # Select only items that will be plotted.  This helps speeds up gui response since this
+        # selection is not done by matplotlib in the main loop
+        idx = next(i for i in range(len(self.xdata)) if self.xdata[i] >= self.xmin and self.xdata[i] <= self.xmax)
+        xx = self.xdata[idx:]
         if self.lines==None:
-            line,=self.axes.plot(self.xdata, self.ydata[0], 'r',label='Power In')
+            line,=self.axes.plot(xx,  self.ydata[0][idx:], 'r',label='Power In')
             self.lines=[line]
-            line,=self.axes.plot(self.xdata, self.ydata[1], 'b',label='Power Out')
+            line,=self.axes.plot(xx,  self.ydata[1][idx:], 'b',label='Power Out')
             self.lines.append(line)
-            line,=self.axes2.plot(self.xdata, self.ydata[2], 'g',label='% Charged')
+            line,=self.axes2.plot(xx, self.ydata[2][idx:], 'g',label='% Charged')
             self.lines.append(line)
-            line,=self.axes2.plot(self.xdata, self.ydata[3], 'k',label='Temperature')
+            line,=self.axes2.plot(xx, self.ydata[3][idx:], 'k',label='Temperature')
             self.lines.append(line)
             
             self.fig.autofmt_xdate()
@@ -170,14 +178,15 @@ class theCanvas(FigureCanvas):
             self.axes2.legend(loc='upper right')
         else:
             for i in range(len(self.lines)):
-                self.lines[i].set_xdata(self.xdata)
-                self.lines[i].set_ydata(self.ydata[i])
+                self.lines[i].set_xdata(xx)
+                self.lines[i].set_ydata(self.ydata[i][idx:])
 
-        # Axes control
-        self.axes.set(xlim=(self.xmin,self.xmax),xlabel='Time Stamp',
-                      ylim=(0,100.5),ylabel='Power (W)')
-        self.axes2.set(xlim=(self.xmin,self.xmax),xlabel='Time Stamp',
-                       ylim=(0,100.5),ylabel='Percent Charge (%), Temp (deg C)')
+        # Axes control - only update if we need to
+        if self.xmax and self.xmax!=self.xmax_old:
+            self.axes.set(xlim=(self.xmin,self.xmax),xlabel='Time Stamp',
+                          ylim=(0,100.5),ylabel='Power (W)')
+            self.axes2.set(xlim=(self.xmin,self.xmax),xlabel='Time Stamp',
+                           ylim=(self.ymin,self.ymax),ylabel='Percent Charge (%), Temp (deg C)')
 
         
 ###############################################################################
@@ -415,11 +424,14 @@ class BATTERY():
         
         key='batteryType'
         if i==-1:
-            print('BATTERY TYPE SELECT: Setting combo box from state...')
             try:
                 bt=self.state[key]
                 idx=BATTERY_TYPES.index(bt)
-                self.BatteryTypeBox.setCurrentIndex(idx)
+                idx2=self.BatteryTypeBox.currentIndex()
+                if idx!=idx2:
+                    print('BATTERY TYPE SELECT: Setting combo box from state ...')
+                    print('\tidx=',idx,'\tidx2=',idx2)
+                    self.BatteryTypeBox.setCurrentIndex(idx)
             except:
                 print('\t*** Oooops! \tkey=',key)
                 print('\t\t\tkeys=',self.state.keys())
@@ -428,7 +440,7 @@ class BATTERY():
             bt=BATTERY_TYPES[i]
             self.state=self.device.set_state(key,bt,VERBOSITY=0)
             idx=i
-        print('BATTERY TYPE SELECT: i=',i,idx,'\tbt=',bt)
+            print('\ti=',i,idx,'\tbt=',bt)
         
     # Function to select time period for graph
     def TimePeriodSelect(self,i):
@@ -557,7 +569,7 @@ class BATTERY():
             
     # Routine to update plot with latest data
     def update_plot(self):
-        print('UPDATE PLOT ...',self.device.name)
+        print('\nUPDATE PLOT ',self.device.name,'...')
 
         # Query the yeti gz
         now=datetime.now()
@@ -628,7 +640,11 @@ class BATTERY():
 
         # Plot the latest and greatest readings and redraw the canvas
         self.canvas.updatePlots(now,data,self.time_delta)
-        self.canvas.draw()
+        # This is where the slow-down is!
+        #self.canvas.draw()
+        # This just defers the update but the gui is still laggy
+        self.canvas.draw_idle()
+        print('UPDATE PLOT ...',self.device.name,' - Done.\n')
 
     # Function to parse old log file so we can plot all available data
     def parse_log_file(self,fname):
@@ -723,19 +739,57 @@ class MainWindow(QMainWindow):
         self.yeti = BATTERY(self.tabs,'Yeti')
         self.renogy = BATTERY(self.tabs,'Renogy')
 
+        # Some test code?
+        if 0:
+            self.canvas = self.yeti.canvas
+            self.ax = self.yeti.canvas.axes
+            xmax=10            # was 10
+            npts=24*60*2           # was 100
+            self.x_data = np.linspace(0, xmax, npts)
+            self.y_data = np.sin(self.x_data)
+            self.line, = self.ax.plot(self.x_data, self.y_data, 'r-')
+            
+            self.timer = QTimer()
+            self.timer.timeout.connect(self.test_plot)
+            self.timer.start(100)
+            return
+        
         # Start thread to update state for each device
         self.Updater = StateUpdaterThread(UPDATE_INTERVAL,self)
         self.Updater.sig1.connect(self.yeti.update_plot)
         self.Updater.sig2.connect(self.renogy.update_plot)
-        self.Updater.start()
+        #self.Updater.start()
+
+        self.Timer = threading.Timer(1.0, self.Updater.Update_State)
+        self.Timer.daemon=True              
+        self.Timer.start()
         
         # Ready to roll!
-        self.show()
+        #self.show()
+
+    def test_plot(self):
+        """Callback to refresh data and redraw the canvas"""
+        # Generate new data shifts
+        shift = np.random.uniform(0, 2 * np.pi)
+        new_y = np.sin(self.x_data + shift)
+
+        self.xmin=0
+        self.xmax=10
+        self.ymin=1.1
+        self.ymax=-1.1
+        self.ax.set(xlim=(self.xmin,self.xmax),xlabel='Time',
+                          ylim=(self.ymin,self.ymax),ylabel='Amplitude')
+        
+        # Update line data (Efficient approach)
+        self.line.set_ydata(new_y)
+        
+        # Trigger the canvas refresh
+        self.canvas.draw_idle()
 
     # Capture 'x' in upper right corner so that we can shut down gracefully
     # This is magically connected to this event
     def closeEvent(self, event):
-        print("()(()()()()()( User has clicked the red x on the main window ()()()()()))")
+        print("()(()()()()()( User has clicked the upper-right X on the main window ()()()()()))")
 
         #print('closeEvent: Stopping timers...')
         #self.Timer.stop()
@@ -765,6 +819,7 @@ class MainWindow(QMainWindow):
 # Let the beatings begin!
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    w = MainWindow(YETI_ADDR)
+    window = MainWindow(YETI_ADDR)
+    window.show()
     app.exec()
 

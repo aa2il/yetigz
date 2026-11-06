@@ -452,7 +452,7 @@ class CHARGE_CONTROLLER():
         
     # Function to query sysinfo
     def get_sysinfo(self,TimeOut=10):
-        print('\n=========== GET SYSINFO ==============\n')
+        print('\n=========== GET SYSINFO ==============\t',self.name,'\n')
         self.now=datetime.now()
         #print('now=',self.now)
         self.fp_log.write('\nGET_SYSINFO @ %s ...' % (self.now) )
@@ -483,7 +483,7 @@ class CHARGE_CONTROLLER():
 
     # Get state
     def get_state(self,TimeOut=10):
-        print('\n=========== GET STATE ==============\n')
+        print('\n=========== GET STATE ==============\t',self.name,'\n')
         self.now=datetime.now()
         self.fp_log.write('\nGET_STATE @ %s ...' % (self.now) )
         self.fp_log.flush()
@@ -513,6 +513,7 @@ class CHARGE_CONTROLLER():
 
         #self.now=datetime.now()
         #print(self.now)
+        print('GET STATE: ',self.name,' - Done.')
         return self.state
 
     # Change state of some attribute, e.g. toggle 12V port
